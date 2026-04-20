@@ -1,0 +1,6 @@
+{
+  "name": "Công cụ Chuyển Đổi Truyện Chữ sang SRT",
+  "description": "Tự động thu thập chương truyện, tinh chỉnh hội thoại hài hước bằng AI và xuất file SRT theo thời lượng chuẩn.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,700&family=Courier+Prime&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-art-bg: #f8f5f0;
+  --color-art-ink: #1a1a1a;
+  --color-art-accent: #ff4d00;
+  --color-art-panel: #ffffff;
+  
+  --font-art-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-art-mono: "Courier Prime", "Courier New", Courier, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-art-bg text-art-ink font-art-sans;
+  }
+}
+
+@layer components {
+  .art-border {
+    @apply border-2 border-art-ink;
+  }
+  
+  .art-btn {
+    @apply px-4 py-2 border-2 border-art-ink bg-art-ink text-white uppercase font-bold text-xs transition-colors hover:bg-art-accent hover:text-art-ink cursor-pointer flex items-center justify-center gap-2;
+  }
+
+  .art-input {
+    @apply p-3 border-2 border-art-ink bg-transparent font-art-sans text-sm focus:outline-none focus:ring-2 focus:ring-art-accent;
+  }
+
+  .art-label {
+    @apply text-[10px] uppercase font-[900] tracking-wider text-art-ink mb-1 block;
+  }
+
+  .art-card {
+    @apply bg-art-panel border-2 border-art-ink;
+  }
+}
