@@ -17,7 +17,8 @@ import {
   Split,
   Upload,
   Files,
-  Scissors
+  Scissors,
+  RotateCcw
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import axios from "axios";
@@ -80,11 +81,8 @@ export default function App() {
   const [isSplitting, setIsSplitting] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [rawSrtContent, setRawSrtContent] = useState<string | null>(null);
+  const [suggestedTitle, setSuggestedTitle] = useState<string | null>(null);
 
-  // AI Configs from design
-  const [boDoi, setBoDoi] = useState(0);
-  const [haiHuoc, setHaiHuoc] = useState(0);
-  
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
@@ -213,6 +211,44 @@ export default function App() {
       setError(`Lỗi scraping: ${detail}`);
     } finally {
       setIsScraping(false);
+      // Generate suggested title if we have data
+      if (collected.length > 0) {
+        generateSuggestedTitle(collected);
+      }
+    }
+  };
+
+  const generateSuggestedTitle = async (data: Chapter[] = chapters) => {
+    if (data.length === 0) return;
+    try {
+      setProgress(prev => ({ ...prev, message: "Đang phân tích để tạo tên truyện hấp dẫn..." }));
+      // Use more chapters if available for better context, up to 5
+      const sampleText = data.slice(0, 5).map(c => c.content).join("\n").substring(0, 7000);
+      
+      const prompt = `
+        Dựa trên nội dung truyện sau, hãy đề xuất 1 tên truyện NGẮN GỌN (dưới 10 từ), cực kỳ thu hút người đọc và mang tính "viral" cao trên mạng xã hội.
+        
+        YÊU CẦU QUAN TRỌNG: 
+        Trong tên truyện PHẢI xuất hiện ít nhất một từ hoặc cụm từ chỉ nhân vật hấp dẫn như: 
+        'Bạch Nguyệt Quang', 'Thanh Mai Trúc Mã', 'Vợ Chồng', 'Tổng Tài', 'Ảnh Đế', 'Sư Phụ', 'Tiền Bối', 'Tiểu Thư', 'Gia Chủ', 'Nữ Phụ', 'Nam Phụ', 'Phản Diện', 'Tra Nam', 'Tiện Nữ', 'Lão Đại', 'Phu Nhân', 'Mẹ Kế', 'Ba Nuôi', 'Con Nuôi'...
+        hoặc các danh xưng tương tự phù hợp nhất với bối cảnh câu chuyện.
+        
+        Chỉ trả về duy nhất 1 cái tên, không thêm bất kỳ ký tự nào khác (không ngoặc kép, không lời dẫn).
+        
+        NỘI DUNG TRUYỆN:
+        ${sampleText}
+      `;
+
+      const response = await (ai as any).models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+      const title = response.text || (response.response && response.response.text && response.response.text()) || "";
+      setSuggestedTitle(title.trim().replace(/^"|"$/g, ''));
+      setProgress(prev => ({ ...prev, message: "Đã gợi ý tên truyện mới!" }));
+    } catch (err) {
+      console.error("Lỗi tạo tên gợi ý:", err);
+      setProgress(prev => ({ ...prev, message: "Lỗi khi tạo tên gợi ý." }));
     }
   };
 
@@ -228,61 +264,12 @@ export default function App() {
     
     abortControllerRef.current = new AbortController();
 
-    // Use pure chapter content without adding headers if in 100% original mode
-    let fullText = "";
-    if (boDoi === 0 && haiHuoc === 0) {
-      fullText = chapters.map(c => c.content).join("\n\n");
-      setProgress(prev => ({ ...prev, message: "Đang tạo SRT từ nội dung gốc 100%..." }));
-      generateSRT(fullText);
-      setProgress(prev => ({ ...prev, message: "Hoàn tất chuyển hóa nội dung gốc!" }));
-      setIsProcessingAI(false);
-      return;
-    }
-
-    fullText = chapters.map(c => `--- ${c.title} ---\n\n${c.content}`).join("\n\n");
-    const processedText = fullText;
-
-    if (processedText.length > 300000) {
-      setError("Cảnh báo: Văn bản quá dài (>300k ký tự) có thể khiến AI xử lý chậm hoặc bị ngắt quãng.");
-    }
-    
-    try {
-      const prompt = `
-        Bạn là một biên tập viên truyện chữ chuyên nghiệp.
-        Nhiệm vụ:
-        1. Tìm các câu hội thoại và bối cảnh.
-        2. Tinh chỉnh hội thoại với độ NGẠO NGHỄ: ${boDoi}% và độ HÀI HƯỚC: ${haiHuoc}%.
-        3. GIỮ NGUYÊN toà bộ nội dung truyện, không tóm tắt, không bỏ sót chương.
-        4. Trả về toàn bộ nội dung đã biên tập.
-        
-        TRUYỆN:
-        ${processedText}
-      `;
-
-      setProgress(prev => ({ ...prev, message: "AI đang làm mượt nội dung..." }));
-      
-      const response = await (ai as any).models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      if (abortControllerRef.current?.signal.aborted) {
-        throw new Error("Hành động đã bị hủy bỏ");
-      }
-
-      const text = response.text || (response.response && response.response.text && response.response.text()) || "";
-      generateSRT(text || processedText);
-      setProgress(prev => ({ ...prev, message: "Xử lý AI hoàn tất!" }));
-      setIsProcessingAI(false);
-    } catch (err: any) {
-      if (err.message === "Hành động đã bị hủy bỏ") {
-        setProgress(prev => ({ ...prev, message: "Đã hủy bỏ!" }));
-      } else {
-        setError(`Lỗi hệ thống: ${err.message}`);
-        setProgress(prev => ({ ...prev, message: "Gặp lỗi xử lý!" }));
-      }
-      setIsProcessingAI(false);
-    }
+    // Logic for 100% original content transformation
+    let fullText = chapters.map(c => c.content).join("\n\n");
+    setProgress(prev => ({ ...prev, message: "Đang tạo SRT từ nội dung gốc..." }));
+    generateSRT(fullText);
+    setProgress(prev => ({ ...prev, message: "Hoàn tất chuyển hóa nội dung!" }));
+    setIsProcessingAI(false);
   };
 
   const cancelProcessing = () => {
@@ -504,46 +491,40 @@ export default function App() {
                 </button>
               </div>
 
-              {/* AI Config Box */}
-              <div className="art-border p-6 relative bg-art-bg mt-2">
-                <span className="absolute -top-3 left-3 bg-art-bg px-2 text-[9px] font-black uppercase">
-                  Cấu Hình AI
-                </span>
-                
-                <div className="space-y-6">
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="art-label mb-0">Độ Bố Đời</label>
-                      <span className="text-art-accent font-bold text-xs">{boDoi}%</span>
+              {/* Suggested Title Box */}
+              <AnimatePresence>
+                {suggestedTitle && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="art-border p-6 relative bg-art-bg mt-2 border-art-accent shadow-[4px_4px_0_0_#ff4d4d]"
+                  >
+                    <span className="absolute -top-3 left-3 bg-art-accent text-white px-2 py-0.5 text-[9px] font-black uppercase flex items-center gap-1">
+                      <CheckCircle2 size={10} /> Tên Gợi Ý AI
+                    </span>
+                    
+                    <button 
+                      onClick={() => generateSuggestedTitle()}
+                      title="Tạo tên mới"
+                      className="absolute -top-3 right-3 bg-art-ink text-white p-1 hover:bg-art-accent transition-colors border border-art-ink"
+                    >
+                      <RotateCcw size={12} />
+                    </button>
+                    
+                    <div className="space-y-4">
+                      <div className="bg-gray-50 p-4 border border-art-ink/10 rounded-sm">
+                        <p className="text-[13px] font-black leading-tight text-center italic">
+                          "{suggestedTitle}"
+                        </p>
+                      </div>
+                      
+                      <p className="text-[10px] opacity-70 leading-relaxed font-bold text-center uppercase tracking-tighter">
+                        Đã tối ưu với từ khóa nhân vật thu hút người đọc
+                      </p>
                     </div>
-                    <input 
-                      type="range" 
-                      min="0" max="100" 
-                      value={boDoi}
-                      onChange={(e) => setBoDoi(parseInt(e.target.value))}
-                      className="w-full h-[2px] bg-art-ink appearance-none accent-art-accent cursor-pointer"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="art-label mb-0">Độ Hài Hước</label>
-                      <span className="text-art-accent font-bold text-xs">{haiHuoc}%</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="0" max="100" 
-                      value={haiHuoc}
-                      onChange={(e) => setHaiHuoc(parseInt(e.target.value))}
-                      className="w-full h-[2px] bg-art-ink appearance-none accent-art-accent cursor-pointer"
-                    />
-                  </div>
-                  
-                  <p className="text-[11px] italic opacity-70 leading-relaxed font-medium">
-                    AI sẽ tự động viết lại hội thoại dựa trên tính cách nhân vật và tham số trên.
-                  </p>
-                </div>
-              </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Execution Group */}
               <div className="space-y-4">
