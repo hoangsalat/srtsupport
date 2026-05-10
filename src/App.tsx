@@ -65,6 +65,25 @@ const calculateDuration = (charCount: number): number => {
   return 10.0; // Should be split if > 220
 };
 
+const cleanText = (text: string): string => {
+  if (!text) return "";
+  let result = text;
+  
+  const delimiters = ["/", ".", "-", "_", "|"];
+  delimiters.forEach(d => {
+    const escapedD = d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`([a-zA-Zà-ỹÀ-Ỹ0-9])(?:${escapedD})(?=[a-zA-Zà-ỹÀ-Ỹ0-9])`, 'gu');
+    
+    let prev;
+    do {
+      prev = result;
+      result = result.replace(regex, "$1");
+    } while (result !== prev);
+  });
+
+  return result;
+};
+
 export default function App() {
   const [urls, setUrls] = useState<string[]>([""]);
   const [isScraping, setIsScraping] = useState(false);
@@ -282,8 +301,11 @@ export default function App() {
   };
 
   const generateSRT = (text: string) => {
+    // 0. Clean filter-bypass patterns
+    const cleanedFullText = cleanText(text);
+
     // 1. First split by line breaks to preserve initial structure
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    const lines = cleanedFullText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
     const cleanedSegments: string[] = [];
 
     // 2. Break down long lines into smaller chunks (max 150 chars for better AI reading)
@@ -337,8 +359,11 @@ export default function App() {
     setIsSplitting(true);
     setError(null);
     try {
+      // 0. Clean filter-bypass patterns for uploaded files
+      const cleanedContent = cleanText(content);
+
       // Split by double newline to get blocks
-      const rawBlocks = content.trim().split(/\r?\n\s*\r?\n/);
+      const rawBlocks = cleanedContent.trim().split(/\r?\n\s*\r?\n/);
       const blocks = rawBlocks.filter(b => b.trim().length > 5);
       
       if (blocks.length < count) {
